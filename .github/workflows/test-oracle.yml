@@ -1,0 +1,144 @@
+name: Test Oracle SQL Queries
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test-sql:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: Checkout student repository
+      - name: Checkout student repository
+        uses: actions/checkout@v4
+
+      # Step 2: Start Oracle XE container
+      - name: Start Oracle XE container
+        run: |
+          docker run --name oracle-db -d -p 1521:1521 -p 5500:5500 \
+            -e ORACLE_PASSWORD=oracle \
+            -v ${{ github.workspace }}:/workspace \
+            gvenzl/oracle-xe:21-slim
+
+      # Step 3: Wait for Oracle to be ready
+      - name: Wait for Oracle to be ready
+        run: |
+          echo "Waiting for Oracle XE to be ready..."
+          for i in {1..60}; do
+            if docker exec -i oracle-db bash -lc 'sqlplus -s system/oracle' <<'SQL' | grep -qx 'DB_READY'
+          set heading off feedback off pagesize 0
+          whenever sqlerror exit 1
+          select 'DB_READY' from dual;
+          exit
+          SQL
+            then
+              echo "✅ Oracle is ready."
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "❌ Oracle did not become ready in time."
+          docker logs oracle-db
+          exit 1
+
+      # Step 4: Clone private solutions repository
+      - name: Clone private solutions repository
+        run: |
+          git clone https://x-access-token:${{ secrets.SOLUTIONS_TOKEN }}@github.com/IESEBRE/MP0484_SOLUCIONS_SQL_2627.git /tmp/MP0484_SOLUCIONS_SQL_2627
+          echo "📁 Listing cloned files:"
+          docker cp /tmp/MP0484_SOLUCIONS_SQL_2627 oracle-db:/tmp/
+
+      # Step 5: Initialize database schema (optional)
+      - name: Run setup SQL if exists
+        run: |
+          if [ -f /${{ github.workspace }}/sql/setup/setup.sql ]; then
+            echo "File exists"
+            docker cp /${{ github.workspace }}/sql/setup/setup.sql oracle-db:/tmp
+            docker exec oracle-db bash -lc "sqlplus -s system/oracle @/tmp/setup.sql"
+          else
+            echo "File does not exist"
+          fi
+
+      # 👇 Step 6: Generate expected results from the private repo
+      - name: Generate expected results
+        run: |
+          mkdir -p /${{ github.workspace }}/results/expected
+          for sql_file in /tmp/MP0484_SOLUCIONS_SQL_2627/SELECT/BLOC3/*.sql; do
+            name=$(basename "$sql_file" .sql)
+            echo "Generating expected result for $name ..."
+            docker exec oracle-db bash -lc "sqlplus system/oracle <<EOF
+              SET HEADING OFF 
+              SET FEEDBACK OFF 
+              SET PAGESIZE 0 
+              SET VERIFY OFF 
+              SET ECHO OFF
+              SPOOL /tmp/${name}_expected.csv
+              @$sql_file
+              SPOOL OFF
+              EXIT;
+              EOF"
+            
+            docker cp oracle-db:/tmp/${name}_expected.csv /${{ github.workspace }}/results/expected/
+          done
+
+      # 👇 Step 6: Generate student results
+      - name: Generate student results
+        run: |
+          mkdir -p /${{ github.workspace }}/results/student
+          docker cp /${{ github.workspace }}/sql oracle-db:/tmp
+          for sql_file in /${{ github.workspace }}/sql/*.sql; do
+            name=$(basename "$sql_file" .sql)
+            echo "Generating student result for $name ..."
+            docker exec oracle-db bash -lc "sqlplus system/oracle <<EOF
+            SET ECHO OFF
+            SET HEADING OFF 
+            SET FEEDBACK OFF 
+            SET PAGESIZE 0 
+            SET VERIFY OFF 
+            SPOOL /tmp/${name}_student.csv
+            @/tmp/sql/$name
+            SPOOL OFF
+            EXIT
+            EOF"
+
+            docker cp oracle-db:/tmp/${name}_student.csv /${{ github.workspace }}/results/student/
+          done
+
+      # 👇 Step 7: Compare results
+      - name: Compare expected vs student results
+        run: |
+          echo "Comparing student queries with expected results..."
+          pass_count=0
+          fail_count=0
+          for expected_file in /${{ github.workspace }}/results/expected/*.csv; do
+            name=$(basename "$expected_file" _expected.csv)
+            student_file="/${{ github.workspace }}/results/student/${name}_student.csv"
+            if [ -f "$student_file" ]; then
+              
+              expected_trimmed="/tmp/${name}_expected_trimmed.csv"
+              student_trimmed="/tmp/${name}_student_trimmed.csv"
+
+              sed '1d;$d' "$expected_file" | tr -d '\r' | sort > "$expected_trimmed"
+              sed '1d;$d' "$student_file"   | tr -d '\r' | sort > "$student_trimmed"
+
+              if diff -q "$expected_trimmed" "$student_trimmed" > /dev/null; then
+                echo "✅ $name: Passed"
+                let "pass_count+=1"
+              else
+                echo "❌ $name: Failed (results differ)"
+                let "fail_count+=1"
+              fi
+            else
+              echo "⚠️  $name: No student query found"
+              ((fail_count++))
+            fi
+          done
+          echo "---------------------------------------------"
+          echo "Total passed: $pass_count"
+          echo "Total failed: $fail_count"
+          if ((fail_count > 0)); then
+            exit 1
+          fi
