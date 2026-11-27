@@ -1,3 +1,3 @@
-SELECT department_id FROM departments
+SELECT department_id, manager_id FROM departments
 INTERSECT
-SELECT manager_id FROM employees;
+SELECT manager_id, department_id FROM employees;
