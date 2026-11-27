@@ -1,2 +1,2 @@
-SELECT first_name || ' ' || last_name, LENGTH(first_name) + LENGTH(last_name) as caracters
+SELECT UPPER(first_name || ' ' || last_name) AS nom_complet, LENGTH(first_name || ' ' || last_name) AS caracters
 FROM employees;
