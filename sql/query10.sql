@@ -1,2 +1,7 @@
-SELECT MAX(SALARY) AS "sou màxim", MIN(SALARY) AS "sou mínim", AVG(SALARY) AS "mitjana dels sous", SUM(SALARY) AS "suma dels sous dels empleats"
-FROM employees;
+SELECT MAX(salary) FROM employees
+UNION ALL
+SELECT MIN(salary) FROM employees
+UNION ALL
+SELECT AVG(salary) FROM employees
+UNION ALL
+SELECT SUM(salary) FROM employees;
