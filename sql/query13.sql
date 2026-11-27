@@ -1,7 +1,3 @@
-SELECT department_id
-FROM departments
-WHERE department_id NOT IN (
-    SELECT department_id
-    FROM hr.employees
-    WHERE department_id IS NOT NULL
-);
+SELECT department_id FROM departments
+MINUS
+SELECT department_id FROM employees;
