@@ -1,3 +1,3 @@
-SELECT first_name, last_name, ROUND(salary, -2) AS "salari arodonit"
+SELECT first_name, last_name, ROUND(salary, -2) AS sou_arrodonit
 FROM employees
-ORDER BY salary DESC, last_name ASC;
+ORDER BY sou_arrodonit DESC, last_name ASC;
