@@ -1,5 +1,5 @@
 SELECT department_id
-FROM hr.departments
+FROM departments
 WHERE department_id NOT IN (
     SELECT department_id
     FROM hr.employees
